@@ -27,21 +27,26 @@ const el = {
   level: $("level"),
   timer: $("timer"),
   progress: $("progress"),
+  seek: $("seek"),
   sb: $("sb"),
   bb: $("bb"),
   next: $("next"),
   toggle: $("toggle"),
   prev: $("prev"),
   nextBtn: $("nextBtn"),
-  reset: $("reset"),
   panel: $("panel"),
   panelToggle: $("panelToggle"),
+  panelClose: $("panelClose"),
   structureList: $("structureList"),
   addLevel: $("addLevel"),
   addBreak: $("addBreak"),
   applyStructure: $("applyStructure"),
   defaultStructure: $("defaultStructure"),
   panelError: $("panelError"),
+  newStructure: $("newStructure"),
+  structureEmpty: $("structureEmpty"),
+  copyLink: $("copyLink"),
+  toast: $("toast"),
   saveName: $("saveName"),
   saveStructure: $("saveStructure"),
   savedList: $("savedList"),
@@ -117,7 +122,11 @@ function render() {
   el.timer.textContent = fmtTime(remainingMs);
   el.timer.classList.toggle("warning", remainingMs <= WARNING_SECONDS * 1000);
   el.timer.classList.toggle("paused", !running);
-  el.progress.style.width = `${Math.min(100, (1 - remainingMs / totalMs) * 100)}%`;
+  const elapsedSec = Math.round((totalMs - Math.max(0, remainingMs)) / 1000);
+  el.seek.style.setProperty("--p", `${Math.min(100, Math.max(0, (1 - remainingMs / totalMs) * 100))}%`);
+  el.seek.setAttribute("aria-valuemax", String(totalMs / 1000));
+  el.seek.setAttribute("aria-valuenow", String(elapsedSec));
+  el.seek.setAttribute("aria-valuetext", `${fmtTime(remainingMs)} remaining`);
 
   const upcoming = levels.slice(levelIndex + 1).find((l) => !l.break);
   const nextIsBreak = levels[levelIndex + 1]?.break;
@@ -129,7 +138,9 @@ function render() {
       `${fmtChips(upcoming.sb)} / ${fmtChips(upcoming.bb)}`;
   }
 
-  el.toggle.textContent = running ? "Pause" : "Start";
+  el.toggle.classList.toggle("running", running);
+  el.toggle.setAttribute("aria-label", running ? "Pause" : "Start");
+  el.toggle.title = running ? "Pause (Space)" : "Start (Space)";
   document.title = `${fmtTime(remainingMs)} · ${el.level.textContent}`;
 
   el.structureList.querySelectorAll(".structure-row").forEach((row, i) => {
@@ -160,6 +171,29 @@ function setLevel(index) {
   remainingMs = levels[levelIndex].minutes * 60_000;
   if (running) endTime = Date.now() + remainingMs;
   render();
+}
+
+// Within this much of the start of a level, "previous" goes back a level
+// instead of restarting the current one (like a music player's back button).
+const RESTART_GRACE_MS = 1000;
+
+function elapsedMs() {
+  const totalMs = levels[levelIndex].minutes * 60_000;
+  const left = running ? endTime - Date.now() : remainingMs;
+  return totalMs - left;
+}
+
+// Manual level changes stop the clock; press Start to resume.
+// (Automatic advance at the end of a level keeps running — see tick().)
+function previous() {
+  const goBack = elapsedMs() < RESTART_GRACE_MS;
+  pause();
+  setLevel(goBack ? levelIndex - 1 : levelIndex);
+}
+
+function next() {
+  pause();
+  setLevel(levelIndex + 1);
 }
 
 function tick() {
@@ -200,16 +234,55 @@ function setPanelOpen(open) {
 }
 
 function numberInput(value, onChange, label) {
+  // Text input (not type="number") so there are no spinner buttons and the
+  // mouse wheel / arrow keys can't change values by accident.
+  // inputmode="numeric" still brings up the number keypad on phones.
   const input = document.createElement("input");
-  input.type = "number";
-  input.min = "1";
-  input.step = "1";
+  input.type = "text";
+  input.inputMode = "numeric";
+  input.autocomplete = "off";
   input.value = value ?? "";
   input.setAttribute("aria-label", label);
   input.addEventListener("input", () => {
-    const n = Number(input.value);
-    input.classList.toggle("invalid", !(input.value !== "" && Number.isFinite(n) && n > 0));
+    // Allow digits only (drops letters, commas, signs, decimals).
+    const digits = input.value.replace(/\D/g, "");
+    if (digits !== input.value) {
+      const caret = input.selectionStart - (input.value.length - digits.length);
+      input.value = digits;
+      input.setSelectionRange(Math.max(0, caret), Math.max(0, caret));
+    }
+    const n = digits === "" ? NaN : Number(digits);
+    input.classList.toggle("invalid", !(n > 0));
     onChange(n);
+  });
+
+  // Clear the field on focus so a new number can be typed straight away.
+  // The old value stays visible as a placeholder, and comes back if the
+  // field is left empty (blur, Enter, or Esc).
+  let previous = "";
+  const restoreIfEmpty = () => {
+    if (input.value !== "") return;
+    input.value = previous;
+    const n = previous === "" ? NaN : Number(previous);
+    input.classList.toggle("invalid", !(n > 0));
+    onChange(n);
+  };
+  input.addEventListener("focus", () => {
+    previous = input.value;
+    input.placeholder = previous;
+    input.value = "";
+  });
+  input.addEventListener("blur", () => {
+    restoreIfEmpty();
+    input.placeholder = "";
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") restoreIfEmpty(); // then the document handler applies
+    else if (e.key === "Escape") {
+      input.value = "";
+      restoreIfEmpty();
+      input.blur();
+    }
   });
   return input;
 }
@@ -253,6 +326,7 @@ function renderStructure() {
     el.structureList.append(row);
   });
 
+  el.structureEmpty.classList.toggle("show", draft.length === 0);
   showMessage("");
   render();
 }
@@ -278,14 +352,16 @@ function showMessage(text, ok = false) {
   el.panelError.classList.toggle("ok", ok);
 }
 
-// Returns an error message for the draft, or "" if it is valid.
-function draftError() {
-  if (!draft.length) return "Add at least one level.";
-  if (!isValidStructure(draft)) return "All blinds and minutes must be positive numbers.";
-  const bad = draft.findIndex((l) => !l.break && l.bb < l.sb);
-  if (bad !== -1) return `Level ${blindNumber(draft, bad)}: big blind must be ≥ small blind.`;
+// Returns an error message for a structure, or "" if it is valid.
+function structureError(list) {
+  if (!list.length) return "Add at least one level.";
+  if (!isValidStructure(list)) return "All blinds and minutes must be positive numbers.";
+  const bad = list.findIndex((l) => !l.break && l.bb < l.sb);
+  if (bad !== -1) return `Level ${blindNumber(list, bad)}: big blind must be ≥ small blind.`;
   return "";
 }
+
+const draftError = () => structureError(draft);
 
 function applyStructure() {
   const error = draftError();
@@ -305,6 +381,16 @@ function applyStructure() {
   }
   renderStructure();
   showMessage("Structure applied.", true);
+}
+
+// Empty editor for building a structure from scratch. Nothing changes on the
+// board until Apply; the name field is cleared so Save doesn't overwrite the
+// previously loaded structure.
+function newStructure() {
+  draft = [];
+  el.saveName.value = "";
+  renderStructure();
+  showMessage("New structure. Add levels, then Apply.", true);
 }
 
 function loadDefault() {
@@ -393,21 +479,201 @@ function deleteNamed() {
   showMessage(`Deleted "${name}".`, true);
 }
 
+// ---------- Seekable timer bar ----------
+
+// Sets the time remaining in the current level, keeping the clock running if it was.
+// Clamped to at least 1 second so seeking to the very end doesn't skip the level.
+function seekTo(newRemainingMs) {
+  const totalMs = levels[levelIndex].minutes * 60_000;
+  const snapped = Math.round(newRemainingMs / 1000) * 1000;
+  remainingMs = Math.min(totalMs, Math.max(1000, snapped));
+  if (running) endTime = Date.now() + remainingMs;
+  render();
+}
+
+function seekToPointer(e) {
+  const rect = el.seek.getBoundingClientRect();
+  const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  seekTo(levels[levelIndex].minutes * 60_000 * (1 - fraction));
+}
+
+let dragPointer = null;
+
+// Stop mouse clicks from focusing the bar, so no focus box appears.
+// Keyboard users can still Tab to it.
+el.seek.addEventListener("mousedown", (e) => e.preventDefault());
+
+el.seek.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  dragPointer = e.pointerId;
+  try { el.seek.setPointerCapture(e.pointerId); } catch { /* keep working without capture */ }
+  el.seek.classList.add("dragging");
+  seekToPointer(e);
+});
+el.seek.addEventListener("pointermove", (e) => {
+  if (e.pointerId === dragPointer) seekToPointer(e);
+});
+function endDrag(e) {
+  if (e.pointerId !== dragPointer) return;
+  dragPointer = null;
+  el.seek.classList.remove("dragging");
+  // Release focus after a mouse/touch drag so ←/→ go back to changing levels.
+  // (Keyboard seeking is for when the bar is reached with Tab.)
+  el.seek.blur();
+}
+el.seek.addEventListener("pointerup", endDrag);
+el.seek.addEventListener("pointercancel", endDrag);
+
+// Keyboard on the focused bar: ←/→ ±10 s, Shift ±1 min, Home/End.
+el.seek.addEventListener("keydown", (e) => {
+  const step = e.shiftKey ? 60_000 : 10_000;
+  const left = running ? endTime - Date.now() : remainingMs;
+  const actions = {
+    ArrowRight: () => seekTo(left - step),
+    ArrowUp: () => seekTo(left - step),
+    ArrowLeft: () => seekTo(left + step),
+    ArrowDown: () => seekTo(left + step),
+    Home: () => seekTo(Infinity),
+    End: () => seekTo(0),
+  };
+  if (actions[e.key]) {
+    e.preventDefault();
+    e.stopPropagation(); // don't also change level via the global shortcuts
+    actions[e.key]();
+  }
+});
+
+// ---------- Shareable link (query parameters) ----------
+//
+//   ?s=100-200-20_200-400-20_b10_300-600-20&l=2&t=754
+//
+//   s  structure: levels joined by "_"; a level is "sb-bb-minutes", a break is "b<minutes>"
+//   l  current level, 1-based position in the structure (breaks count)
+//   t  seconds remaining in the current level
+//
+// A link always opens paused, so whoever opens it can start the clock.
+
+function encodeStructure(list) {
+  return list.map((l) => (l.break ? `b${l.minutes}` : `${l.sb}-${l.bb}-${l.minutes}`)).join("_");
+}
+
+function decodeStructure(str) {
+  const list = [];
+  for (const part of str.split("_")) {
+    let m;
+    if ((m = /^b(\d{1,4})$/.exec(part))) list.push({ break: true, minutes: Number(m[1]) });
+    else if ((m = /^(\d{1,12})-(\d{1,12})-(\d{1,4})$/.exec(part))) {
+      list.push({ sb: Number(m[1]), bb: Number(m[2]), minutes: Number(m[3]) });
+    } else return null;
+  }
+  return structureError(list) ? null : list;
+}
+
+function currentRemainingMs() {
+  return Math.max(0, running ? endTime - Date.now() : remainingMs);
+}
+
+function stateUrl() {
+  const url = new URL(location.href);
+  url.hash = "";
+  url.search = new URLSearchParams({
+    s: encodeStructure(levels),
+    l: String(levelIndex + 1),
+    t: String(Math.ceil(currentRemainingMs() / 1000)),
+  }).toString();
+  return url.toString();
+}
+
+// Reads ?s, ?l, ?t on page load. Invalid parts are ignored (with a notice).
+function applyUrlState() {
+  const params = new URLSearchParams(location.search);
+  if (!["s", "l", "t"].some((k) => params.has(k))) return;
+  const problems = [];
+
+  if (params.has("s")) {
+    const list = decodeStructure(params.get("s"));
+    if (list) {
+      levels = list;
+      draft = clone(levels);
+      saveStructure(levels);
+    } else problems.push("structure");
+  }
+
+  levelIndex = 0;
+  if (params.has("l")) {
+    const l = Number(params.get("l"));
+    if (Number.isInteger(l) && l >= 1 && l <= levels.length) levelIndex = l - 1;
+    else problems.push("level");
+  }
+
+  const totalMs = levels[levelIndex].minutes * 60_000;
+  remainingMs = totalMs;
+  if (params.has("t")) {
+    const t = Number(params.get("t"));
+    if (Number.isInteger(t) && t >= 0 && t * 1000 <= totalMs) remainingMs = t * 1000;
+    else problems.push("timer");
+  }
+
+  // Drop the parameters so a reload doesn't jump back to this snapshot.
+  history.replaceState(null, "", location.pathname);
+
+  showToast(problems.length
+    ? `Opened shared link, but ignored invalid ${problems.join(", ")}.`
+    : "Opened shared link. Press play to start.");
+}
+
+let toastTimer = null;
+function showToast(text) {
+  el.toast.textContent = text;
+  el.toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.remove("show"), 3000);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Clipboard API unavailable (e.g. insecure context); fall back to a hidden textarea.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+    return ok;
+  }
+}
+
+async function copyLink() {
+  const url = stateUrl();
+  if (await copyText(url)) showToast("Link copied: level, timer and structure.");
+  else prompt("Copy this link:", url);
+}
+
 // ---------- Events ----------
 
 el.toggle.addEventListener("click", () => (running ? pause() : start()));
-el.prev.addEventListener("click", () => setLevel(levelIndex - 1));
-el.nextBtn.addEventListener("click", () => setLevel(levelIndex + 1));
-el.reset.addEventListener("click", () => setLevel(levelIndex));
+el.prev.addEventListener("click", previous);
+el.nextBtn.addEventListener("click", next);
 
 el.panelToggle.addEventListener("click", () => setPanelOpen(!el.panel.classList.contains("open")));
+el.panelClose.addEventListener("click", () => setPanelOpen(false));
 el.addLevel.addEventListener("click", addLevel);
 el.addBreak.addEventListener("click", addBreak);
 el.applyStructure.addEventListener("click", applyStructure);
 el.defaultStructure.addEventListener("click", loadDefault);
+el.newStructure.addEventListener("click", newStructure);
 el.saveStructure.addEventListener("click", saveNamed);
 el.loadSaved.addEventListener("click", loadNamed);
 el.deleteSaved.addEventListener("click", deleteNamed);
+el.copyLink.addEventListener("click", copyLink);
 
 document.addEventListener("keydown", (e) => {
   // Don't hijack keys while editing the structure.
@@ -419,10 +685,12 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target instanceof HTMLInputElement) applyStructure();
     return;
   }
+  // Leave browser shortcuts (Ctrl/Cmd+L, +S, +F, ...) alone.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === "Space") { e.preventDefault(); running ? pause() : start(); }
-  else if (e.key === "ArrowRight") setLevel(levelIndex + 1);
-  else if (e.key === "ArrowLeft") setLevel(levelIndex - 1);
-  else if (e.key === "r" || e.key === "R") setLevel(levelIndex);
+  else if (e.key === "ArrowRight") next();
+  else if (e.key === "ArrowLeft") previous();
+  else if (e.key === "l" || e.key === "L") copyLink();
   else if (e.key === "s" || e.key === "S") setPanelOpen(!el.panel.classList.contains("open"));
   else if (e.key === "Escape") setPanelOpen(false);
   else if (e.key === "f" || e.key === "F") {
@@ -430,5 +698,6 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+applyUrlState();
 renderStructure();
 renderSavedList();

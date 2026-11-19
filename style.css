@@ -2,6 +2,9 @@
 
 html, body {
   height: 100%;
+  height: 100dvh; /* excludes mobile browser toolbars */
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
   background: radial-gradient(ellipse at center, #1f6b3a 0%, #0c3a1d 70%, #06210f 100%);
   color: #f5f5f5;
   font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -16,6 +19,11 @@ html, body {
   gap: 2vh;
   text-align: center;
   padding: 2rem;
+  padding:
+    max(2rem, env(safe-area-inset-top))
+    max(2rem, env(safe-area-inset-right))
+    max(2rem, env(safe-area-inset-bottom))
+    max(2rem, env(safe-area-inset-left));
 }
 
 .level {
@@ -38,19 +46,70 @@ html, body {
 .timer.warning { color: #ff7043; }
 .timer.paused { opacity: 0.5; }
 
-.progress {
+/* Seekable timer bar. The padding gives a tall, finger-friendly hit area;
+   the negative margin keeps it from changing the layout. */
+.seek {
+  --p: 0%;
+  position: relative;
   width: min(80vw, 900px);
-  height: 8px;
+  padding: 14px 0;
+  margin: -14px 0;
+  cursor: pointer;
+  touch-action: none; /* drag on touch screens without scrolling the page */
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; /* no grey/blue box on tap (mobile) */
+}
+
+.seek:focus { outline: none; }
+
+.progress {
+  height: 4px;
   background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border-radius: 2px;
   overflow: hidden;
+  transition: height 0.15s ease;
 }
 
 .progress-bar {
   height: 100%;
-  width: 0%;
+  width: var(--p);
   background: #ffd54f;
   transition: width 0.25s linear;
+}
+
+.seek-thumb {
+  position: absolute;
+  top: 50%;
+  left: var(--p);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffd54f;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.15s ease, left 0.25s linear;
+  pointer-events: none;
+}
+
+.seek:hover .progress,
+.seek:focus-visible .progress,
+.seek.dragging .progress { height: 6px; }
+
+.seek:hover .seek-thumb,
+.seek:focus-visible .seek-thumb,
+.seek.dragging .seek-thumb { transform: translate(-50%, -50%) scale(1); }
+
+.seek:focus-visible .seek-thumb { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Follow the pointer exactly while dragging. */
+.seek.dragging .progress-bar,
+.seek.dragging .seek-thumb { transition: transform 0.15s ease; }
+
+@media (hover: none) {
+  /* Touch screens: always show the thumb so the bar looks draggable. */
+  .seek-thumb { transform: translate(-50%, -50%) scale(0.8); }
 }
 
 .blinds {
@@ -107,6 +166,54 @@ button.primary {
 }
 
 button.primary:hover { background: #ffca28; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon {
+  width: 1.6em;
+  height: 1.6em;
+  fill: currentColor;
+}
+
+/* Show the play icon when stopped, pause icon while running. */
+.icon-btn .icon-pause,
+.icon-btn.running .icon-play { display: none; }
+.icon-btn.running .icon-pause { display: block; }
+
+/* ---------- Copy link + toast ---------- */
+
+.share-btn {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  padding: 0.5rem;
+  z-index: 5;
+}
+.share-btn .icon { width: 1.4em; height: 1.4em; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  top: max(1rem, env(safe-area-inset-top));
+  transform: translate(-50%, -1rem);
+  max-width: min(calc(100vw - 8rem), 600px);
+  padding: 0.7rem 1.2rem;
+  text-align: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 1rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 20;
+  overflow-wrap: anywhere;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- Structure panel ---------- */
 
@@ -226,6 +333,13 @@ button.primary:hover { background: #ffca28; }
 
 .panel-error { color: #ff7043; min-height: 1.2em; font-size: 0.9rem; }
 
+.panel-saved,
+.panel-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
 .panel-body h3 {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -256,6 +370,30 @@ button.primary:hover { background: #ffca28; }
 
 .panel-body h3.first { margin-top: 0; padding-top: 0; border-top: none; }
 
+/* "Levels" title with the New structure button on the right; carries the section divider. */
+.levels-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+.panel-body .levels-header h3 { margin: 0; padding: 0; border: none; }
+
+.small-btn { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+
+.structure-empty {
+  display: none;
+  padding: 1rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+}
+.structure-empty.show { display: block; }
+
 .panel-footer {
   position: sticky;
   bottom: -1.5rem;
@@ -266,4 +404,158 @@ button.primary:hover { background: #ffca28; }
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.panel-close {
+  padding: 0.3rem 0.6rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+/* ---------- Phones: portrait / narrow ---------- */
+
+@media (max-width: 600px) {
+  .board {
+    gap: 2.5vh;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .level { font-size: 1.4rem; }
+
+  .timer { font-size: 25vw; }
+
+  .seek { width: 100%; }
+
+  .blinds { gap: 3vw; margin-top: 1vh; }
+  .blind-label { font-size: 0.75rem; letter-spacing: 0.1em; }
+  .blind-value, .blind-sep { font-size: 11vw; }
+
+  .next { font-size: 1rem; }
+
+  /* Three touch targets; Start/Pause gets the most room. */
+  .controls {
+    width: 100%;
+    max-width: 420px;
+    display: grid;
+    grid-template-columns: 1fr 1.6fr 1fr;
+    gap: 0.5rem;
+    margin-top: 2vh;
+  }
+  .controls button { padding: 0.9rem 0; min-width: 0; font-size: 1rem; }
+
+  /* Edge tab: compact and horizontal, pinned near the bottom so it stays clear of the board. */
+  .panel-toggle {
+    top: auto;
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    transform: none;
+    flex-direction: row;
+    gap: 0.4rem;
+    padding: 0.55rem 0.8rem;
+  }
+  .panel-toggle-text { writing-mode: horizontal-tb; font-size: 0.75rem; }
+
+  /* Full-screen panel; close with the ✕ in its header. */
+  .panel { --panel-width: 100vw; border-left: none; }
+  .panel.open .panel-toggle { display: none; }
+
+  .panel-body {
+    padding:
+      max(1rem, env(safe-area-inset-top))
+      max(1rem, env(safe-area-inset-right))
+      max(1rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
+  }
+  .panel-footer {
+    bottom: calc(-1 * max(1rem, env(safe-area-inset-bottom)));
+    margin: auto -1rem calc(-1 * max(1rem, env(safe-area-inset-bottom)));
+    padding: 0.6rem 1rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .structure-head,
+  .structure-row { grid-template-columns: 2.4rem 1fr 1fr 3.4rem 2.4rem; }
+  .structure-row .remove { padding: 0.45rem 0; }
+
+  /* 16px inputs stop iOS Safari from zooming in on focus. */
+  .structure-row input,
+  .panel-row input[type="text"],
+  .panel-row select { font-size: 16px; }
+
+  /* Saved list on its own line, Load/Delete below it. */
+  .saved-row { flex-wrap: wrap; }
+  .saved-row select { flex: 1 1 100%; }
+}
+
+/* ---------- Phones: landscape / short screens ---------- */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .board {
+    gap: 1.5vh;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .level { font-size: 6vh; }
+  .timer { font-size: 32vh; }
+  .progress { height: 3px; }
+  .seek { padding: 10px 0; margin: -10px 0; }
+
+  .blinds { margin-top: 0; gap: 3vw; }
+  .blind-label { font-size: 3.5vh; }
+  .blind-value, .blind-sep { font-size: 13vh; }
+
+  .next { font-size: 4vh; }
+
+  .controls { margin-top: 1vh; gap: 0.6rem; }
+  .controls button { padding: 0.45rem 1.1rem; font-size: 0.95rem; }
+  .controls button.primary { min-width: 6rem; }
+
+  .panel-toggle { padding: 0.6rem 0.4rem; }
+  .panel-toggle-text { font-size: 0.75rem; }
+
+  /* Full-width panel: saved structures + actions on the left, scrolling level list on the right. */
+  .panel { --panel-width: 100vw; border-left: none; }
+  .panel.open .panel-toggle { display: none; }
+
+  .panel-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "header levels"
+      "saved  levels"
+      "footer levels";
+    column-gap: 1.5rem;
+    row-gap: 0.6rem;
+    overflow: hidden;
+    padding:
+      max(0.75rem, env(safe-area-inset-top))
+      max(1rem, env(safe-area-inset-right))
+      max(0.75rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
+  }
+  .panel-header { grid-area: header; }
+  .panel-saved { grid-area: saved; gap: 0.5rem; }
+  .panel-levels { grid-area: levels; overflow-y: auto; min-height: 0; gap: 0.5rem; padding-right: 0.25rem; }
+  .panel-levels .levels-header { margin-top: 0; padding-top: 0; border-top: none; }
+  .panel-footer {
+    grid-area: footer;
+    align-self: end;
+    position: static;
+    margin: 0;
+    padding: 0.5rem 0 0;
+  }
+
+  .structure-row input,
+  .panel-row input[type="text"],
+  .panel-row select { font-size: 16px; }
 }
