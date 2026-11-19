@@ -1,31 +1,38 @@
-// Default blind structure. Edit here, or build one in the Structure side panel.
-// `minutes` is the level length. Set `break: true` for a break level.
+// Default blind structure. The page always opens with this.
+// `minutes` is the level length. Use `break: true` (no blinds) for a break.
 const DEFAULT_LEVELS = [
-  { sb: 100,  bb: 200,   minutes: 20 },
-  { sb: 200,  bb: 400,   minutes: 20 },
-  { sb: 300,  bb: 600,   minutes: 20 },
-  { sb: 400,  bb: 800,   minutes: 20 },
-  { break: true,         minutes: 10 },
-  { sb: 500,  bb: 1000,  minutes: 20 },
-  { sb: 600,  bb: 1200,  minutes: 20 },
-  { sb: 800,  bb: 1600,  minutes: 20 },
-  { sb: 1000, bb: 2000,  minutes: 20 },
-  { break: true,         minutes: 10 },
-  { sb: 1500, bb: 3000,  minutes: 20 },
-  { sb: 2000, bb: 4000,  minutes: 20 },
-  { sb: 3000, bb: 6000,  minutes: 20 },
-  { sb: 4000, bb: 8000,  minutes: 20 },
-  { sb: 5000, bb: 10000, minutes: 20 },
+  { minutes: 13, sb: 100,   bb: 200 },
+  { minutes: 13, sb: 200,   bb: 300 },
+  { minutes: 13, sb: 200,   bb: 400 },
+  { minutes: 13, sb: 300,   bb: 600 },
+  { minutes: 13, sb: 400,   bb: 800 },
+  { minutes: 13, sb: 500,   bb: 1000 },
+  { minutes: 13, sb: 1000,  bb: 1500 },
+  { minutes: 5,  break: true },
+  { minutes: 12, sb: 1000,  bb: 2000 },
+  { minutes: 12, sb: 1500,  bb: 3000 },
+  { minutes: 12, sb: 2000,  bb: 4000 },
+  { minutes: 11, sb: 3000,  bb: 6000 },
+  { minutes: 11, sb: 4000,  bb: 8000 },
+  { minutes: 11, sb: 5000,  bb: 10000 },
+  { minutes: 11, sb: 10000, bb: 20000 },
+  { minutes: 9,  sb: 15000, bb: 30000 },
+  { minutes: 9,  sb: 20000, bb: 40000 },
+  { minutes: 9,  sb: 30000, bb: 60000 },
 ];
 
 const WARNING_SECONDS = 60;
-const STORAGE_KEY = "tournament-board.structure";
+// Older versions remembered the last applied structure here; it is now cleared on start-up
+// so the page always opens with the default structure.
+const LEGACY_STRUCTURE_KEY = "tournament-board.structure";
 const SAVED_KEY = "tournament-board.saved-structures";
 
 const $ = (id) => document.getElementById(id);
 const el = {
   level: $("level"),
   timer: $("timer"),
+  breakInfo: $("breakInfo"),
+  breakTime: $("breakTime"),
   progress: $("progress"),
   seek: $("seek"),
   sb: $("sb"),
@@ -68,25 +75,7 @@ function isValidStructure(levels) {
   );
 }
 
-function loadStructure() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (isValidStructure(saved)) return saved;
-  } catch {
-    // Corrupt or unavailable storage; fall back to default.
-  }
-  return clone(DEFAULT_LEVELS);
-}
-
-function saveStructure(levels) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(levels));
-  } catch {
-    // Storage unavailable (e.g. private mode); structure still applies for this session.
-  }
-}
-
-let levels = loadStructure();
+let levels = clone(DEFAULT_LEVELS); // a shared link can override this in init()
 let draft = clone(levels);
 let levelIndex = 0;
 let remainingMs = levels[0].minutes * 60_000;
@@ -109,6 +98,34 @@ function blindNumber(list, index) {
 
 // ---------- Board ----------
 
+function fmtHms(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+// Time until the next break starts: what's left of the current level plus every
+// level before the next break. During a break it counts to the break after it.
+// Returns null when there are no more breaks.
+function msUntilNextBreak() {
+  const nextBreak = levels.findIndex((l, i) => i > levelIndex && l.break);
+  if (nextBreak === -1) return null;
+  let ms = Math.max(0, remainingMs);
+  for (let i = levelIndex + 1; i < nextBreak; i++) ms += levels[i].minutes * 60_000;
+  return ms;
+}
+
+function renderNextBreak() {
+  const ms = msUntilNextBreak();
+  el.breakInfo.classList.toggle("hidden", ms === null);
+  if (ms !== null) {
+    el.breakTime.textContent = fmtHms(ms);
+    el.breakInfo.setAttribute("aria-label", `Next break in ${fmtHms(ms)}`);
+  }
+}
+
 function render() {
   const lvl = levels[levelIndex];
   const totalMs = lvl.minutes * 60_000;
@@ -120,6 +137,7 @@ function render() {
   el.bb.textContent = lvl.break ? "—" : fmtChips(lvl.bb);
 
   el.timer.textContent = fmtTime(remainingMs);
+  renderNextBreak();
   el.timer.classList.toggle("warning", remainingMs <= WARNING_SECONDS * 1000);
   el.timer.classList.toggle("paused", !running);
   const elapsedSec = Math.round((totalMs - Math.max(0, remainingMs)) / 1000);
@@ -311,7 +329,13 @@ function renderStructure() {
       );
     }
 
-    row.append(numberInput(lvl.minutes, (n) => (lvl.minutes = n), `Level ${i + 1} minutes`));
+    row.append(
+      numberInput(lvl.minutes, (n) => { lvl.minutes = n; updateTotals(); }, `Level ${i + 1} minutes`)
+    );
+
+    const total = document.createElement("span");
+    total.className = "total";
+    row.append(total);
 
     const remove = document.createElement("button");
     remove.className = "remove";
@@ -326,9 +350,28 @@ function renderStructure() {
     el.structureList.append(row);
   });
 
+  updateTotals();
   el.structureEmpty.classList.toggle("show", draft.length === 0);
   showMessage("");
   render();
+}
+
+// Running total in each row: elapsed tournament time at the end of that level, as hh:mm.
+// Shows --:-- from the first row with an invalid time onwards.
+function fmtHoursMinutes(totalMinutes) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function updateTotals() {
+  const cells = el.structureList.querySelectorAll(".structure-row .total");
+  let sum = 0;
+  draft.forEach((lvl, i) => {
+    if (!cells[i]) return;
+    sum = lvl.minutes > 0 && Number.isFinite(sum) ? sum + lvl.minutes : NaN;
+    cells[i].textContent = Number.isFinite(sum) ? fmtHoursMinutes(sum) : "--:--";
+  });
 }
 
 function addLevel() {
@@ -372,7 +415,6 @@ function applyStructure() {
 
   const prevDuration = levels[levelIndex].minutes;
   levels = clone(draft);
-  saveStructure(levels);
 
   levelIndex = Math.min(levelIndex, levels.length - 1);
   if (levels[levelIndex].minutes !== prevDuration) {
@@ -596,7 +638,6 @@ function applyUrlState() {
     if (list) {
       levels = list;
       draft = clone(levels);
-      saveStructure(levels);
     } else problems.push("structure");
   }
 
@@ -698,6 +739,13 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-applyUrlState();
-renderStructure();
-renderSavedList();
+// ---------- Start-up ----------
+
+function init() {
+  try { localStorage.removeItem(LEGACY_STRUCTURE_KEY); } catch { /* storage unavailable */ }
+  applyUrlState(); // a shared link replaces the default structure/level/time
+  renderStructure();
+  renderSavedList();
+}
+
+init();

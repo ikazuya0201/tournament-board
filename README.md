@@ -18,6 +18,8 @@ Open `index.html` in a browser. No build step or server required.
 
 When a level ends, a beep plays and the next level starts automatically. The timer turns orange in the final minute.
 
+The coffee-cup countdown in the top-left corner of the page shows the time until the next break (hh:mm:ss). It's hidden when no breaks are left.
+
 Click or drag the progress bar under the timer to set the time remaining in the current level, to the nearest second. Left is the full level, right is the end. This works while paused or running, and it stops at 00:01 so dragging to the end doesn't skip the level. You can also Tab to the bar and use ←/→ (±10 s), Shift+←/→ (±1 min), Home (full time) and End (00:01).
 
 ### Mobile
@@ -26,7 +28,7 @@ The layout adapts to phones in both orientations: the timer and blinds scale to 
 
 ## Blind structure
 
-Click the **Structure** tab on the right edge to slide out the structure editor. Edit small/big blinds and minutes per level, add levels (pre-filled at double the previous blinds) or breaks, remove rows, then click **Apply** (or press Enter in a field). The applied structure is saved in the browser's `localStorage`, so it survives reloads. **Load Default** puts the built-in structure into the editor. **New structure** (next to the Levels heading) empties the editor so you can build one from scratch. The board doesn't change until you Apply.
+Click the **Structure** tab on the right edge to slide out the structure editor. Edit small/big blinds and minutes per level (the **Total** column shows the running tournament time at the end of each level as hh:mm), add levels (pre-filled at double the previous blinds) or breaks, remove rows, then click **Apply** (or press Enter in a field). Applied changes last until the page is reloaded. The page always opens with the default structure, so use **Saved structures** to keep a structure. **Load Default** puts the built-in structure into the editor. **New structure** (next to the Levels heading) empties the editor so you can build one from scratch. The board doesn't change until you Apply.
 
 ### Saved structures
 
@@ -38,11 +40,13 @@ At the top of the panel you can keep several named structures in the browser:
 
 Saved structures live in this browser only (`localStorage`). They aren't shared between browsers or devices, and clearing site data removes them.
 
-The built-in default is the `DEFAULT_LEVELS` array at the top of `app.js`. Each entry is `{ sb, bb, minutes }`, or `{ break: true, minutes }` for a break.
+### Default structure
+
+The page always opens with the default structure (a shared link is the only exception). To change it, edit the `DEFAULT_LEVELS` array at the top of `app.js`. Each entry is `{ minutes, sb, bb }`, or `{ minutes, break: true }` for a break.
 
 ## Sharing a link
 
-Click the link button in the top-right corner (or press **L**) to copy a URL that captures the current structure, level, and time remaining. Opening it restores that state, **paused**, so whoever opens it presses play to continue. The structure from the link becomes the active structure; your named saved structures are left alone. After loading, the parameters are removed from the address bar so a reload doesn't jump back to the snapshot.
+Click the link button in the top-right corner (or press **L**) to copy a URL that captures the current structure, level, and time remaining. Opening it restores that state, **paused**, so whoever opens it presses play to continue. The link's structure is used for that visit only; your named saved structures are left alone. After loading, the parameters are removed from the address bar so a reload doesn't jump back to the snapshot.
 
 URL format:
 

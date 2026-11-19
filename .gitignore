@@ -26,3 +26,6 @@ coverage/
 # Local tool output
 .playwright-mcp/
 .claude/settings.local.json
+
+# Local scratch copy of the default structure (the real default lives in app.js)
+default.csv
