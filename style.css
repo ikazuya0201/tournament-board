@@ -317,7 +317,6 @@ button.primary:hover { background: #ffca28; }
   gap: 0.4rem;
 }
 
-.structure-row.current { outline: 1px solid #ffd54f; border-radius: 4px; }
 
 .structure-row .num { font-size: 0.9rem; color: rgba(255, 255, 255, 0.7); }
 

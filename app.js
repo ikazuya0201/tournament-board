@@ -160,10 +160,6 @@ function render() {
   el.toggle.setAttribute("aria-label", running ? "Pause" : "Start");
   el.toggle.title = running ? "Pause (Space)" : "Start (Space)";
   document.title = `${fmtTime(remainingMs)} · ${el.level.textContent}`;
-
-  el.structureList.querySelectorAll(".structure-row").forEach((row, i) => {
-    row.classList.toggle("current", i === levelIndex);
-  });
 }
 
 function beep() {
