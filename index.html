@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tournament Board</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="board">
+    <div class="level" id="level">Level 1</div>
+
+    <div class="timer" id="timer">20:00</div>
+    <div class="progress"><div class="progress-bar" id="progress"></div></div>
+
+    <div class="blinds">
+      <div class="blind">
+        <div class="blind-label">Small Blind</div>
+        <div class="blind-value" id="sb">100</div>
+      </div>
+      <div class="blind-sep">/</div>
+      <div class="blind">
+        <div class="blind-label">Big Blind</div>
+        <div class="blind-value" id="bb">200</div>
+      </div>
+    </div>
+
+    <div class="next" id="next">Next: 200 / 400</div>
+
+    <div class="controls">
+      <button id="prev" title="Previous level (←)">&#9664;&#9664;</button>
+      <button id="toggle" class="primary" title="Start / Pause (Space)">Start</button>
+      <button id="nextBtn" title="Next level (→)">&#9654;&#9654;</button>
+      <button id="reset" title="Reset level (R)">Reset</button>
+    </div>
+  </main>
+
+  <aside class="panel" id="panel" aria-label="Blind structure editor">
+    <button class="panel-toggle" id="panelToggle" aria-expanded="false" aria-controls="panel" title="Blind structure (S)">
+      <span class="panel-toggle-icon">&#9664;</span>
+      <span class="panel-toggle-text">Structure</span>
+    </button>
+
+    <div class="panel-body">
+      <h2>Blind Structure</h2>
+
+      <h3 class="first">Saved Structures</h3>
+
+      <div class="panel-row">
+        <input type="text" id="saveName" placeholder="Structure name" maxlength="60" aria-label="Structure name">
+        <button id="saveStructure">Save</button>
+      </div>
+
+      <div class="panel-row">
+        <select id="savedList" aria-label="Saved structures"></select>
+        <button id="loadSaved">Load</button>
+        <button id="deleteSaved">Delete</button>
+      </div>
+
+      <h3>Levels</h3>
+
+      <div class="structure-head">
+        <span>#</span><span>Small</span><span>Big</span><span>Min</span><span></span>
+      </div>
+      <ol class="structure-list" id="structureList"></ol>
+
+      <div class="panel-row">
+        <button id="addLevel">+ Level</button>
+        <button id="addBreak">+ Break</button>
+      </div>
+
+      <div class="panel-footer">
+        <p class="panel-error" id="panelError" role="alert"></p>
+
+        <div class="panel-row">
+          <button id="applyStructure" class="primary">Apply</button>
+          <button id="defaultStructure">Load Default</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <script src="app.js"></script>
+</body>
+</html>
